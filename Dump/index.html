@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soto Syllabus Flowchart Explorer</title>
+    <!-- React & Tailwind CDN -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            bg: '#0F172A',
+                            card: '#1E293B'
+                        }
+                    }
+                }
+            }
+        </script>
+        <style>
+            /* simple SVG animation helper for expand/collapse */
+            .svg-anim {
+                transition: transform 260ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease;
+                transform-origin: left top;
+            }
+            .card-shadow{
+                box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+            }
+            .nav-bar{background: #0b1220; border: 1px solid #1f2937}
+        </style>
+        <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+        <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+        <script src="https://unpkg.com/lucide@0.244.0/dist/umd/lucide.js"></script>
+    </head>
+    <body class="h-full bg-bg text-slate-100">
+        <div id="root" class="min-h-screen"></div>
+        <script type="module" src="app.js"></script>
+    </body>
+</html>
+    <style>
+        body { background-color: #0F172A; color: #F8FAFC; font-family: system-ui, -apple-system, sans-serif; }
+        .node-card { transition: all 0.2s ease-in-out; }
+        .node-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function SyllabusApp() {
+            const [nodes, setNodes] = useState([]);
+            const [searchTerm, setSearchTerm] = useState("");
+            const [filterStatus, setFilterStatus] = useState("ALL");
+            const [loadError, setLoadError] = useState("");
+            const [fileName, setFileName] = useState("");
+
+            // Robust CSV Parser
+            const parseCSV = (text, name = "Record.csv") => {
+                try {
+                    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                    if (lines.length < 2) {
+                        setLoadError("CSV file appears to be empty or missing headers.");
+                        return;
+                    }
+
+                    const data = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        // Regex handles quotes and commas inside cells
+                        const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                        const cleanRow = row.map(cell => cell.replace(/^"|"$/g, '').trim());
+
+                        if (cleanRow.length >= 4) {
+                            data.push({
+                                id: cleanRow[0] || `NODE_${i}`,
+                                parentId: cleanRow[1] || '',
+                                type: (cleanRow[2] || 'UNIT').toUpperCase(),
+                                title: cleanRow[3] || 'Untitled Node',
+                                meta: cleanRow[4] || '',
+                                details: cleanRow[5] || '',
+                                status: (cleanRow[6] || 'PENDING').toUpperCase()
+                            });
+                        }
+                    }
+
+                    if (data.length === 0) {
+                        setLoadError("Could not parse rows from CSV. Please check formatting.");
+                    } else {
+                        setNodes(data);
+                        setFileName(name);
+                        setLoadError("");
+                    }
+                } catch (err) {
+                    setLoadError("Error parsing CSV: " + err.message);
+                }
+            };
+
+            // Attempt auto-fetch on load (Works if running on local server)
+            useEffect(() => {
+                fetch('./Record.csv')
+                    .then(res => {
+                        if (!res.ok) throw new Error("Local HTTP fetch restricted");
+                        return res.text();
+                    })
+                    .then(text => parseCSV(text, "Record.csv (Auto-loaded)"))
+                    .catch(() => {
+                        // Silently fail to manual mode if opened via file://
+                        console.log("file:// protocol detected. Please select Record.csv manually.");
+                    });
+            }, []);
+
+            // File Upload Handler
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => parseCSV(event.target.result, file.name);
+                    reader.readAsText(file);
+                }
+            };
+
+            // Drag and Drop Handlers
+            const handleDrop = (e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => parseCSV(event.target.result, file.name);
+                    reader.readAsText(file);
+                }
+            };
+
+            const toggleStatus = (id, newStatus) => {
+                setNodes(prev => prev.map(node => node.id === id ? { ...node, status: newStatus } : node));
+            };
+
+            const exportCSV = () => {
+                let csv = "ID,PARENT_ID,TYPE,TITLE,HOURS_OR_MARKS,DETAILS,STATUS_TAG\n";
+                nodes.forEach(n => {
+                    csv += `${n.id},${n.parentId},${n.type},"${n.title}","${n.meta}","${n.details.replace(/"/g, '""')}",${n.status}\n`;
+                });
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Updated_Record.csv';
+                a.click();
+            };
+
+            const getTypeBadge = (type) => {
+                switch (type) {
+                    case 'COURSE': return 'bg-indigo-600 text-white';
+                    case 'UNIT': return 'bg-blue-600 text-white';
+                    case 'CO': return 'bg-emerald-600 text-white';
+                    case 'LAB': return 'bg-amber-600 text-white';
+                    case 'TUT': return 'bg-purple-600 text-white';
+                    default: return 'bg-gray-600 text-white';
+                }
+            };
+
+            const getStatusBadge = (status) => {
+                switch (status) {
+                    case 'COMPLETED': return 'border-emerald-500 text-emerald-400 bg-emerald-950/40';
+                    case 'IN_PROGRESS': return 'border-amber-500 text-amber-400 bg-amber-950/40';
+                    case 'X': return 'border-red-500 text-red-400 bg-red-950/40';
+                    default: return 'border-slate-600 text-slate-400 bg-slate-800/40';
+                }
+            };
+
+            const courses = nodes.filter(n => n.type === 'COURSE' || !n.parentId);
+
+            return (
+                <div 
+                    className="min-h-screen flex flex-col"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDrop}
+                >
+                    {/* Top Header Bar */}
+                    <header className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-50 flex flex-wrap justify-between items-center gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xl">
+                                S
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold tracking-wide">Soto Syllabus Flowchart</h1>
+                                <p className="text-xs text-slate-400">
+                                    {fileName ? `Loaded: ${fileName}` : "Drag & Drop Record.csv or select file below"}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 flex-wrap">
+                            {/* Manual File Input Button */}
+                            <label className="bg-indigo-600 hover:bg-indigo-500 cursor-pointer px-4 py-1.5 rounded-lg text-sm font-semibold transition flex items-center gap-2">
+                                📁 Open Record.csv
+                                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                            </label>
+
+                            {nodes.length > 0 && (
+                                <>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search topics or IDs..." 
+                                        className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 w-48"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                    <select 
+                                        className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+                                        value={filterStatus}
+                                        onChange={(e) => setFilterStatus(e.target.value)}
+                                    >
+                                        <option value="ALL">All Statuses</option>
+                                        <option value="COMPLETED">Completed</option>
+                                        <option value="IN_PROGRESS">In Progress</option>
+                                        <option value="PENDING">Pending</option>
+                                    </select>
+                                    <button 
+                                        onClick={exportCSV} 
+                                        className="bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded-lg text-sm font-semibold transition"
+                                    >
+                                        Export CSV
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </header>
+
+                    {/* Empty State / Drag & Drop Prompt */}
+                    {nodes.length === 0 && (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                            <div className="border-2 border-dashed border-slate-700 rounded-2xl p-12 max-w-lg w-full bg-slate-900/40">
+                                <div className="text-5xl mb-4">📄</div>
+                                <h2 className="text-xl font-bold mb-2">No Syllabus Data Loaded</h2>
+                                <p className="text-sm text-slate-400 mb-6">
+                                    Browsers restrict auto-reading files when opened directly. Click below or drag and drop your <strong>Record.csv</strong> onto this page.
+                                </p>
+                                <label className="bg-indigo-600 hover:bg-indigo-500 cursor-pointer px-6 py-2.5 rounded-xl font-semibold text-sm transition inline-block">
+                                    Select Record.csv File
+                                    <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                                </label>
+                                {loadError && (
+                                    <p className="text-xs text-red-400 mt-4 bg-red-950/50 p-2 rounded border border-red-800">{loadError}</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Flowchart Canvas */}
+                    {nodes.length > 0 && (
+                        <main className="flex-1 p-6 overflow-x-auto">
+                            <div className="space-y-10 min-w-[900px]">
+                                {courses.map(course => {
+                                    const children = nodes.filter(n => n.parentId === course.id);
+                                    return (
+                                        <div key={course.id} className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative">
+                                            <div className="flex justify-between items-start border-b border-slate-800 pb-4 mb-6">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${getTypeBadge(course.type)}`}>
+                                                            {course.id}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400 font-mono">{course.meta}</span>
+                                                    </div>
+                                                    <h2 className="text-2xl font-bold text-white">{course.title}</h2>
+                                                    <p className="text-sm text-slate-400 mt-1">{course.details}</p>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    {['PENDING', 'IN_PROGRESS', 'COMPLETED'].map(status => (
+                                                        <button
+                                                            key={status}
+                                                            onClick={() => toggleStatus(course.id, status)}
+                                                            className={`text-xs px-2 py-1 rounded border ${course.status === status ? getStatusBadge(status) : 'border-slate-800 text-slate-500'}`}
+                                                        >
+                                                            {status}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {children
+                                                    .filter(child => {
+                                                        const matchesSearch = child.title.toLowerCase().includes(searchTerm.toLowerCase()) || child.details.toLowerCase().includes(searchTerm.toLowerCase());
+                                                        const matchesStatus = filterStatus === 'ALL' || child.status === filterStatus;
+                                                        return matchesSearch && matchesStatus;
+                                                    })
+                                                    .map(child => (
+                                                        <div key={child.id} className="node-card bg-slate-800/80 border border-slate-700/60 rounded-xl p-4 flex flex-col justify-between">
+                                                            <div>
+                                                                <div className="flex justify-between items-center mb-2">
+                                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getTypeBadge(child.type)}`}>
+                                                                        {child.type} - {child.id}
+                                                                    </span>
+                                                                    <span className="text-xs font-mono text-slate-400">{child.meta}</span>
+                                                                </div>
+                                                                <h3 className="font-semibold text-slate-100 mb-1">{child.title}</h3>
+                                                                <p className="text-xs text-slate-400 mb-3">{child.details}</p>
+                                                            </div>
+
+                                                            <div className="pt-3 border-t border-slate-700/50 flex justify-between items-center">
+                                                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${getStatusBadge(child.status)}`}>
+                                                                    {child.status}
+                                                                </span>
+                                                                <div className="flex gap-1">
+                                                                    <button 
+                                                                        onClick={() => toggleStatus(child.id, 'COMPLETED')}
+                                                                        className="text-xs bg-emerald-950 hover:bg-emerald-800 text-emerald-300 px-2 py-1 rounded transition"
+                                                                    >
+                                                                        ✓
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => toggleStatus(child.id, 'IN_PROGRESS')}
+                                                                        className="text-xs bg-amber-950 hover:bg-amber-800 text-amber-300 px-2 py-1 rounded transition"
+                                                                    >
+                                                                        ⚡
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => toggleStatus(child.id, 'X')}
+                                                                        className="text-xs bg-red-950 hover:bg-red-800 text-red-300 px-2 py-1 rounded transition"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </main>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<SyllabusApp />);
+    </script>
+</body>
+</html>

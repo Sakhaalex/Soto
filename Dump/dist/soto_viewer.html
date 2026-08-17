@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Soto Syllabus Viewer — Standalone</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body{background:#0f172a;color:#e6eef8;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+    .card{background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px}
+    .muted{color:#94a3b8}
+    .pill{background:#0b1220;border:1px solid #334155;padding:4px 8px;border-radius:999px}
+    .btn{background:#0b1220;border:1px solid #334155;padding:8px 10px;border-radius:8px;cursor:pointer}
+    .btn-primary{background:#0b1220;border:1px solid #16a34a;color:#a7f3d0}
+    .flow-svg{border-radius:8px;overflow:hidden}
+    .small{font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="max-w-6xl mx-auto p-6">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">Soto — Syllabus Viewer</h1>
+        <div class="muted small">Standalone single-file viewer — open directly (no server needed)</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="pill">Search <input id="search" placeholder="title, id, details" style="background:transparent;border:none;color:inherit;outline:none;margin-left:8px"/></label>
+        <select id="statusFilter" class="pill">
+          <option value="ALL">ALL</option>
+          <option value="COMPLETED">COMPLETED</option>
+          <option value="IN_PROGRESS">IN_PROGRESS</option>
+          <option value="PENDING">PENDING</option>
+          <option value="X">X</option>
+        </select>
+        <label class="btn">📁 <input id="csvFile" type="file" accept=".csv" style="display:none"/></label>
+        <button id="pasteBtn" class="btn">📋 Paste</button>
+        <button id="exportBtn" class="btn">💾 Export CSV</button>
+      </div>
+    </header>
+
+    <section class="mb-4 card">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button id="toggleView" class="btn">Switch to Flow</button>
+          <button id="fitBtn" class="btn">Fit</button>
+          <button id="zoomIn" class="btn">Zoom +</button>
+          <button id="zoomOut" class="btn">Zoom -</button>
+          <button id="resetBtn" class="btn">Reset</button>
+        </div>
+        <div class="muted small">LocalStorage: <span id="lsInfo">enabled</span></div>
+      </div>
+    </section>
+
+    <main id="appRoot">
+      <!-- React will mount here -->
+    </main>
+
+    <footer class="mt-6 muted small">Tip: open this file directly (double-click). Use "Paste" to paste syllabus markdown and import.</footer>
+  </div>
+
+  <!-- React UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <script>
+    (function(){
+      const e = React.createElement;
+      const { useState, useEffect, useRef } = React;
+      const STORAGE_KEY = 'soto_data_v1';
+
+      function quoteCsv(s){ if(s==null) return ''; const needs = /[",\n]/.test(s); return needs ? '"'+String(s).replace(/"/g,'""')+'"' : String(s); }
+      function download(filename, text){ const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type:'text/csv'})); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); }
+      function parseCSV(text){ const rows = []; const lines = text.split(/\r?\n/).filter(Boolean); for(const line of lines){ // simple split supporting quoted
+          const parts=[]; let cur=''; let inQ=false; for(let i=0;i<line.length;i++){ const ch=line[i]; if(ch=='\"'){ if(inQ && line[i+1]=='\"'){ cur+='\"'; i++; } else inQ = !inQ; continue; } if(ch==',' && !inQ){ parts.push(cur); cur=''; } else cur+=ch; } parts.push(cur); rows.push(parts); } return rows; }
+      function csvToNodes(csvText){ const rows = parseCSV(csvText); if(rows.length<1) return []; const headers = rows[0].map(h=>h.trim()); const nodes=[]; for(let i=1;i<rows.length;i++){ const r = rows[i]; if(r.length===0) continue; const obj={}; for(let j=0;j<headers.length;j++){ obj[headers[j]] = r[j]||''; } nodes.push(obj); } return nodes; }
+
+      function normalizeNode(n){ const out = Object.assign({}, n); if(out.TYPE) out.TYPE = String(out.TYPE).toUpperCase(); if(out.STATUS_TAG) out.STATUS_TAG = String(out.STATUS_TAG).toUpperCase(); if(!out.STATUS_TAG) out.STATUS_TAG='PENDING'; return out; }
+
+      // minimal parser for pasted markdown (heuristic)
+      function parseRawSyllabus(text){ const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean); const nodes=[]; let course=null; let ccount=0, ucount=0, cocount=0, lcount=0, tcount=0;
+        for(let i=0;i<lines.length;i++){ const line = lines[i]; const codeLabel = line.match(/(\d{3,6})\s*[:\-]\s*(.+)$/); if(codeLabel){ ccount++; course={ID:'CRS'+String(ccount).padStart(3,'0'),PARENT_ID:'',TYPE:'COURSE',TITLE: codeLabel[1]+': '+codeLabel[2],HOURS_OR_MARKS:'',DETAILS:'',STATUS_TAG:'PENDING'}; nodes.push(course); continue; }
+          const courseMatch = line.match(/^(\d{3,6})\s+(.+)$/); if(courseMatch){ ccount++; course={ID:'CRS'+String(ccount).padStart(3,'0'),PARENT_ID:'',TYPE:'COURSE',TITLE: courseMatch[1]+': '+courseMatch[2],HOURS_OR_MARKS:'',DETAILS:'',STATUS_TAG:'PENDING'}; nodes.push(course); continue; }
+          const unitMatch = line.match(/^(Unit\s+[IVX\d]+)[:\.]?\s*(.*)/i); if(unitMatch && course){ ucount++; nodes.push({ID:'UNT'+String(ucount).padStart(3,'0'),PARENT_ID:course.ID,TYPE:'UNIT',TITLE:unitMatch[1]+(unitMatch[2] ? ': '+unitMatch[2] : ''),HOURS_OR_MARKS:'',DETAILS:'',STATUS_TAG:'PENDING'}); continue; }
+          const coMatch = line.match(/^(CO\s*\d+)[:\).\-]?\s*(.+)$/i); if(coMatch && course){ cocount++; nodes.push({ID:'CO'+String(cocount).padStart(3,'0'),PARENT_ID:course.ID,TYPE:'CO',TITLE:coMatch[1],DETAILS:coMatch[2],STATUS_TAG:'PENDING'}); continue; }
+          if(/lab|practical/i.test(line) && course){ lcount++; nodes.push({ID:'LAB'+String(lcount).padStart(3,'0'),PARENT_ID:course.ID,TYPE:'LAB',TITLE:line,DETAILS:'',STATUS_TAG:'PENDING'}); continue; }
+          if(/tutorial|tut/i.test(line) && course){ tcount++; nodes.push({ID:'TUT'+String(tcount).padStart(3,'0'),PARENT_ID:course.ID,TYPE:'TUT',TITLE:line,DETAILS:'',STATUS_TAG:'PENDING'}); continue; }
+          if(nodes.length>0) nodes[nodes.length-1].DETAILS += (nodes[nodes.length-1].DETAILS? '\n':'') + line;
+        }
+        return nodes;
+      }
+
+      const SAMPLE = [
+        {ID:'CRS001',PARENT_ID:'',TYPE:'COURSE',TITLE:'404193: Innovation and Entrepreneurship',HOURS_OR_MARKS:'3 Hrs',DETAILS:'Sample SPPU course',STATUS_TAG:'PENDING'},
+        {ID:'CO001',PARENT_ID:'CRS001',TYPE:'CO',TITLE:'CO1',DETAILS:'Understand entrepreneurship basics',STATUS_TAG:'PENDING'},
+        {ID:'UNT001',PARENT_ID:'CRS001',TYPE:'UNIT',TITLE:'Unit I: Entrepreneurship',HOURS_OR_MARKS:'10 Hrs',DETAILS:'Topics A,B',STATUS_TAG:'PENDING'}
+      ];
+
+      function App(){
+        const [nodes,setNodes] = useState(()=>{ try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw).map(normalizeNode);}catch(e){} return SAMPLE.map(normalizeNode); });
+        const [viewFlow,setViewFlow] = useState(false);
+        const [search,setSearch] = useState('');
+        const [statusFilter,setStatusFilter] = useState('ALL');
+        const [expanded,setExpanded] = useState(() => new Set());
+        const [scale,setScale] = useState(1);
+        const [pan,setPan] = useState({x:0,y:0});
+        const svgRef = useRef();
+
+        useEffect(()=>{ localStorage.setItem(STORAGE_KEY, JSON.stringify(nodes)); },[nodes]);
+
+        useEffect(()=>{
+          const s = document.getElementById('search'); if(s){ s.value = search; s.oninput = (ev)=> setSearch(ev.target.value); }
+          const sf = document.getElementById('statusFilter'); if(sf){ sf.onchange = (ev)=> setStatusFilter(ev.target.value); }
+          const csvFile = document.getElementById('csvFile'); if(csvFile){ csvFile.onchange = (ev)=>{ const f = ev.target.files[0]; if(f){ const r = new FileReader(); r.onload = (e)=>{ try{ const incoming = csvToNodes(e.target.result).map(normalizeNode); setNodes(ns => mergeNodes(ns, incoming)); }catch(err){ alert('CSV parse failed'); } }; r.readAsText(f); } } }
+          document.getElementById('pasteBtn').onclick = ()=> openPaste();
+          document.getElementById('exportBtn').onclick = ()=> exportCSV();
+          document.getElementById('toggleView').onclick = ()=> setViewFlow(v=>!v);
+          document.getElementById('fitBtn').onclick = ()=> fitToView();
+          document.getElementById('zoomIn').onclick = ()=> setScale(s=>Math.min(3, s*1.2));
+          document.getElementById('zoomOut').onclick = ()=> setScale(s=>Math.max(0.25, s/1.2));
+          document.getElementById('resetBtn').onclick = ()=> { setScale(1); setPan({x:0,y:0}); };
+        },[]);
+
+        function mergeNodes(existingNodes, incomingNodes){ // simplified merge by course title/code
+          const existing = existingNodes.slice(); const courses = existing.filter(n=>n.TYPE==='COURSE');
+          for(const inc of incomingNodes.map(normalizeNode)){
+            if(inc.TYPE==='COURSE'){
+              const match = courses.find(c=> (c.TITLE||'').includes((inc.TITLE||'').match(/(\d{3,6})/)?.[1] || '') || ((c.TITLE||'').toLowerCase()).includes((inc.TITLE||'').toLowerCase());
+              if(match) continue; existing.push(inc); courses.push(inc);
+            } else {
+              // attach if parent exists by matching title code
+              if(inc.PARENT_ID){ const found = existing.find(x=>x.ID===inc.PARENT_ID); if(found){ existing.push(inc); continue; } }
+              // else find probable course
+              const code = (inc.DETAILS||inc.TITLE||'').match(/(\d{3,6})/)?.[1]; if(code){ const found = existing.find(x=>x.TYPE==='COURSE' && (x.TITLE||'').includes(code)); if(found){ inc.PARENT_ID = found.ID; existing.push(inc); continue; } }
+              existing.push(inc);
+            }
+          }
+          return existing;
+        }
+
+        function nodesToCSV(nodes){ const headers = ['ID','PARENT_ID','TYPE','TITLE','HOURS_OR_MARKS','DETAILS','STATUS_TAG']; const lines=[headers.join(',')]; for(const n of nodes){ const row = headers.map(h=>quoteCsv(n[h]||'')); lines.push(row.join(',')); } return lines.join('\n'); }
+        function exportCSV(){ download('Record.csv', nodesToCSV(nodes)); }
+
+        function openPaste(){ const html = `\n<div class=\"card\">\n <div class=\"mb-2\">Paste syllabus text:</div>\n <textarea id=\"pasteArea\" rows=8 class=\"w-full p-2 rounded bg-black/20\"></textarea>\n <div class=\"mt-2 flex justify-end gap-2\"><button id=\"pasteCancel\" class=\"btn\">Cancel</button><button id=\"pasteImport\" class=\"btn btn-primary\">Import</button></div>\n</div>`; const mount = document.createElement('div'); mount.innerHTML = html; document.body.appendChild(mount); document.getElementById('pasteCancel').onclick = ()=> mount.remove(); document.getElementById('pasteImport').onclick = ()=>{ const val = document.getElementById('pasteArea').value; const parsed = parseRawSyllabus(val); if(parsed.length){ setNodes(ns=> mergeNodes(ns, parsed)); mount.remove(); fitToView(); } else alert('No structured items detected'); } }
+
+        // simplified helpers
+        function cycleStatus(id){ setNodes(ns=> ns.map(n=> n.ID===id ? {...n, STATUS_TAG: nextStatus(n.STATUS_TAG)} : n)); }
+        function nextStatus(s){ const order=['PENDING','IN_PROGRESS','COMPLETED','X']; const i = order.indexOf(s||'PENDING'); return order[(i+1)%order.length]; }
+
+        function filteredChildren(pid){ return nodes.filter(n=> n.PARENT_ID===pid && (statusFilter==='ALL' || n.STATUS_TAG===statusFilter) && (search==='' || (n.TITLE||'').toLowerCase().includes(search.toLowerCase()) || (n.DETAILS||'').toLowerCase().includes(search.toLowerCase()) || (n.ID||'').toLowerCase().includes(search.toLowerCase())) ); }
+
+        // --- Flow rendering math
+        const courses = nodes.filter(n=>n.TYPE==='COURSE');
+        const nodeW = 260, nodeH = 72, hSpacing = 48, vSpacing = 18;
+        const maxChildren = Math.max(0, ...courses.map(c=> filteredChildren(c.ID).length));
+        const svgWidth = Math.max(900, courses.length*(nodeW+hSpacing)+100);
+        const svgHeight = Math.max(240, 140 + maxChildren*(nodeH+vSpacing));
+
+        function fitToView(){ try{ const wrap = svgRef.current; if(!wrap) return; const rect = wrap.getBoundingClientRect(); const cw = Math.max(300, rect.width-24); const ch = Math.max(200, rect.height-24); const s = Math.min(cw/svgWidth, ch/svgHeight) * 0.95; const limited = Math.max(0.25, Math.min(2.5, s)); const px = (cw - (svgWidth*limited))/2; const py = (ch - (svgHeight*limited))/2; setScale(limited); setPan({x:px,y:py}); } catch(e){ console.warn(e); } }
+
+        useEffect(()=>{ if(!viewFlow){ // no-op
+        } else { setTimeout(()=>fitToView(),90); } },[nodes.length, viewFlow]);
+
+        // Pan handlers for SVG wrapper
+        const panRef = useRef({dragging:false,startX:0,startY:0,ox:0,oy:0});
+        function onDown(e){ panRef.current.dragging=true; panRef.current.startX=e.clientX; panRef.current.startY=e.clientY; panRef.current.ox=pan.x; panRef.current.oy=pan.y; }
+        function onMove(e){ if(!panRef.current.dragging) return; const dx = e.clientX - panRef.current.startX; const dy = e.clientY - panRef.current.startY; setPan({x: panRef.current.ox + dx, y: panRef.current.oy + dy}); }
+        function onUp(){ panRef.current.dragging=false; }
+
+        // render
+        return e('div',{},
+          e('div',{}, viewFlow ? e('div',{className:'card flow-svg', ref:svgRef, onMouseDown:onDown, onMouseMove:onMove, onMouseUp:onUp, onMouseLeave:onUp, style:{padding:12}},
+            e('svg',{width:'100%', viewBox:`0 0 ${svgWidth} ${svgHeight}`, xmlns:'http://www.w3.org/2000/svg'},
+              e('g',{transform:`translate(${pan.x},${pan.y}) scale(${scale})`},
+                ...courses.flatMap((c,ci)=>{
+                  const cx = 50 + ci*(nodeW+hSpacing); let y=20; const elems=[]; const st = c.STATUS_TAG==='COMPLETED'? '#16a34a' : c.STATUS_TAG==='IN_PROGRESS'? '#f59e0b': '#475569';
+                  elems.push(e('g',{key:'c-'+c.ID, transform:`translate(${cx},${y})`}, e('rect',{x:0,y:0,width:nodeW,height:nodeH,rx:10,fill:'#0f172a',stroke:st, strokeWidth:2}), e('text',{x:12,y:26,fill:'#e6eef8',fontSize:13,fontWeight:700}, c.TITLE.substring(0,60)), e('text',{x:12,y:46,fill:'#94a3b8',fontSize:12}, c.ID + ' • ' + c.HOURS_OR_MARKS)) );
+                  y += nodeH + 12;
+                  const children = filteredChildren(c.ID);
+                  for(const ch of children){ const sc = ch.STATUS_TAG==='COMPLETED'? '#16a34a' : ch.STATUS_TAG==='IN_PROGRESS'? '#f59e0b': '#475569'; elems.push(e('g',{key:ch.ID, transform:`translate(${cx+40},${y})`}, e('rect',{x:0,y:0,width:nodeW-80,height:56,rx:6,fill:'#071226',stroke:sc}), e('text',{x:8,y:22,fill:'#e6eef8',fontSize:12,fontWeight:600}, ch.TITLE.substring(0,50)), e('text',{x:8,y:40,fill:'#94a3b8',fontSize:11}, ch.ID+' • '+ch.TYPE)) ); y += 64; }
+                  return elems;
+                })
+              )
+            )
+          ) : e('div',{}, // simple tree
+            courses.map(c=> e('div',{key:c.ID, className:'card mb-3'}, e('div',{className:'flex items-center justify-between'}, e('div',{}, e('div',{className:'font-bold'}, c.TITLE), e('div',{className:'muted small'}, c.ID+' • '+c.HOURS_OR_MARKS)), e('div',{}, e('button',{className:'btn mr-2', onClick:()=> setExpanded(prev=>{ const n=new Set(prev); if(n.has(c.ID)) n.delete(c.ID); else n.add(c.ID); return n; })}, expanded.has(c.ID)?'Collapse':'Expand'), e('button',{className:'btn', onClick:()=> { setNodes(ns=> ns.map(n=> n.ID===c.ID? {...n, STATUS_TAG: nextStatus(n.STATUS_TAG)} : n)); }}, c.STATUS_TAG)))), expanded.has(c.ID) && e('div',{className:'mt-2'}, filteredChildren(c.ID).map(ch=> e('div',{key:ch.ID, className:'p-2 rounded bg-[#021025] mb-2 flex items-center justify-between'}, e('div',{}, e('div',{className:'font-semibold'}, ch.TITLE), e('div',{className:'muted small'}, ch.ID+' • '+ch.TYPE)), e('div',{}, e('button',{className:'btn', onClick:()=> { setNodes(ns=> ns.map(n=> n.ID===ch.ID? {...n, STATUS_TAG: nextStatus(n.STATUS_TAG)} : n)); }}, ch.STATUS_TAG))))) ) )
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('appRoot')).render(e(App));
+
+    })();
+  </script>
+</body>
+</html>

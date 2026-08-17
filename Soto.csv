@@ -1,0 +1,3 @@
+Alias,Path,Primary_Key,Description
+FILE_INDEX,File/File.csv,Path,System File and Folder Inventory Matrix
+WEBSITES,websites.csv,Page_Alias,Registered Soto Web Interfaces

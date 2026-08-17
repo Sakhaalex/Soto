@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Soto — Simple Flowchart Viewer</title>
+<style>
+  :root{--bg:#0f172a;--muted:#94a3b8;--card:#071124;--accent:#16a34a;color-scheme:dark}
+  html,body{height:100%;margin:0;background:var(--bg);color:#e6eef8;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  .wrap{max-width:1100px;margin:18px auto;padding:18px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .title{font-size:20px;font-weight:700}
+  .muted{color:var(--muted);font-size:13px}
+  .controls{display:flex;gap:8px;align-items:center}
+  .btn{background:transparent;border:1px solid #21303f;color:#cfe8ff;padding:8px 10px;border-radius:8px;cursor:pointer}
+  .btn:active{transform:translateY(1px)}
+  .input{background:transparent;border:1px solid #21303f;color:#cfe8ff;padding:8px;border-radius:8px}
+  main{margin-top:14px}
+  .legend{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}
+  /* SVG styles */
+  svg{width:100%;height:calc(100vh - 220px);background:transparent}
+  .node-rect{fill:transparent;stroke:#2b3b4b;stroke-width:1.4}
+  .node-text{fill:#e6eef8;font-size:13px;font-weight:600}
+  .child-text{fill:#cfe8ff;font-size:12px}
+  .connector{stroke:#2b3b4b;stroke-width:1}
+  .course-hit{cursor:pointer}
+  .collapsed .child{opacity:0.0;transform:translateY(-6px)}
+  .add-form{margin-top:12px;display:flex;gap:8px}
+  .small{font-size:12px;color:var(--muted)}
+  .badge{background:#071226;border:1px solid #21303f;padding:4px 8px;border-radius:999px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="title">Soto — Simple Flowchart Viewer</div>
+        <div class="muted small">Clear, vertical flowchart. Click a course to expand/collapse its topics.</div>
+      </div>
+      <div class="controls">
+        <input id="search" class="input" placeholder="Search title or id" />
+        <button id="fit" class="btn">Fit</button>
+        <button id="showAll" class="btn">Expand All</button>
+        <button id="collapseAll" class="btn">Collapse All</button>
+        <button id="export" class="btn">Export CSV</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="legend" style="margin:12px 0"><div class="badge">COURSE</div><div class="muted">→ units / COs / labs</div></div>
+      <div id="svgWrap" style="background:transparent;border-radius:10px;overflow:hidden;border:1px solid #0f2533;padding:6px">
+        <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <div class="add-form">
+        <select id="addType" class="input"><option value="UNIT">Unit</option><option value="CO">CO</option><option value="LAB">Lab</option></select>
+        <input id="addParent" class="input" placeholder="Parent Course ID (e.g. CRS404181)" />
+        <input id="addTitle" class="input" placeholder="Title (short)" />
+        <button id="addBtn" class="btn">Add</button>
+        <div id="status" class="small" style="margin-left:8px;color:var(--muted)"></div>
+      </div>
+
+    </main>
+  </div>
+
+<script>
+// Minimal embedded dataset (representative courses from your markdowns)
+const nodes = [
+  { ID: 'CRS404181', TYPE: 'COURSE', TITLE: '404181: Radiation and Microwave Theory', HOURS: '3 Hrs', DETAILS:'Radiation & Microwave Theory', CHILDREN: [
+    { ID:'UNT1', TYPE:'UNIT', TITLE: 'Unit I: Fundamental Theory of Radiation', HOURS:'6 Hrs' },
+    { ID:'UNT2', TYPE:'UNIT', TITLE: 'Unit II: Transmission Lines and Waveguides', HOURS:'6 Hrs' },
+    { ID:'CO1', TYPE:'CO', TITLE: 'CO1: Apply fundamentals of EM' },
+    { ID:'CO2', TYPE:'CO', TITLE: 'CO2: Identify modes in waveguide' }
+  ], expanded:true },
+  { ID: 'CRS404182', TYPE:'COURSE', TITLE: '404182: VLSI Design and Technology', HOURS:'3 Hrs', DETAILS:'VLSI Design', CHILDREN:[
+    { ID:'UNT3', TYPE:'UNIT', TITLE:'Unit I: Design with HDL', HOURS:'7 Hrs' },
+    { ID:'CO3', TYPE:'CO', TITLE:'CO1: Develop HDL codes' }
+  ], expanded:false },
+  { ID: 'CRS304181', TYPE:'COURSE', TITLE: '304181: Digital Communication', HOURS:'3 Hrs', DETAILS:'Digital Communication', CHILDREN:[
+    { ID:'UNT4', TYPE:'UNIT', TITLE:'Unit I: Random Processes & Noise', HOURS:'7 Hrs' },
+    { ID:'CO4', TYPE:'CO', TITLE:'CO1: Apply statistical theory' }
+  ], expanded:false }
+];
+
+// Utility: export nodes to CSV
+function nodesToCSV(arr){
+  const headers = ['ID','PARENT_ID','TYPE','TITLE','HOURS_OR_MARKS','DETAILS','STATUS_TAG'];
+  const rows = [headers.join(',')];
+  for(const c of arr){
+    const row = [c.ID,'',c.TYPE,c.TITLE,c.HOURS||'',c.DETAILS||'','PENDING'].map( v => {
+      if(v==null) return '';
+      const s = String(v);
+      return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+    });
+    rows.push(row.join(','));
+    if(c.CHILDREN) for(const ch of c.CHILDREN){
+      const prow = [ch.ID,c.ID,ch.TYPE,ch.TITLE,ch.HOURS||'',ch.DETAILS||'','PENDING'].map(v=>{
+        if(v==null) return '';
+        const s=String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+      }); rows.push(prow.join(','));
+    }
+  }
+  return rows.join('\n');
+}
+
+const svgNS = 'http://www.w3.org/2000/svg';
+const board = document.getElementById('board');
+const svgWrap = document.getElementById('svgWrap');
+
+function render(){
+  // clear
+  while(board.firstChild) board.removeChild(board.firstChild);
+  const gapY = 28; const courseH = 34; const childH = 26; const margin = 20; const colX = 40; let y = margin;
+  const search = (document.getElementById('search').value||'').toLowerCase();
+  nodes.forEach((c,ci)=>{
+    // search filter
+    if(search && !(c.TITLE||'').toLowerCase().includes(search) && !(c.ID||'').toLowerCase().includes(search) && !((c.DETAILS||'').toLowerCase().includes(search))) return;
+    const cx = colX;
+    const courseGroup = document.createElementNS(svgNS,'g');
+    courseGroup.setAttribute('transform',`translate(${cx},${y})`);
+    courseGroup.classList.add('course-hit');
+    // course rect
+    const rect = document.createElementNS(svgNS,'rect'); rect.setAttribute('x',0); rect.setAttribute('y',0);
+    rect.setAttribute('width',900); rect.setAttribute('height',courseH); rect.setAttribute('class','node-rect');
+    courseGroup.appendChild(rect);
+    // text
+    const t = document.createElementNS(svgNS,'text'); t.setAttribute('x',8); t.setAttribute('y',20); t.setAttribute('class','node-text'); t.textContent = c.TITLE;
+    courseGroup.appendChild(t);
+    // subtitle small
+    const sub = document.createElementNS(svgNS,'text'); sub.setAttribute('x',8); sub.setAttribute('y',32); sub.setAttribute('class','child-text'); sub.textContent = c.ID + (c.HOURS?(' • '+c.HOURS):''); courseGroup.appendChild(sub);
+    // click to toggle
+    courseGroup.addEventListener('click', ()=>{ c.expanded = !c.expanded; render(); });
+    board.appendChild(courseGroup);
+    y += courseH + 8;
+    if(c.expanded){
+      // children
+      (c.CHILDREN||[]).forEach((ch,ci2)=>{
+        // connector
+        const line = document.createElementNS(svgNS,'line'); line.setAttribute('x1',20); line.setAttribute('y1',y-6);
+        line.setAttribute('x2',20); line.setAttribute('y2',y+childH-6); line.setAttribute('class','connector'); board.appendChild(line);
+        const g = document.createElementNS(svgNS,'g'); g.setAttribute('transform',`translate(${40},${y})`);
+        const r = document.createElementNS(svgNS,'rect'); r.setAttribute('x',0); r.setAttribute('y',0); r.setAttribute('width',800); r.setAttribute('height',childH); r.setAttribute('class','node-rect');
+        const ct = document.createElementNS(svgNS,'text'); ct.setAttribute('x',8); ct.setAttribute('y',17); ct.setAttribute('class','child-text'); ct.textContent = ch.TITLE;
+        g.appendChild(r); g.appendChild(ct); board.appendChild(g);
+        y += childH + 6;
+      });
+    }
+    y += gapY;
+  });
+  // adjust viewBox to content
+  const contentH = Math.max(400,y+20);
+  board.setAttribute('viewBox',`0 0 980 ${contentH}`);
+}
+
+document.getElementById('fit').addEventListener('click', ()=>{ render(); svgWrap.scrollIntoView({behavior:'smooth',block:'center'}); });
+document.getElementById('showAll').addEventListener('click', ()=>{ nodes.forEach(n=>n.expanded=true); render(); });
+document.getElementById('collapseAll').addEventListener('click', ()=>{ nodes.forEach(n=>n.expanded=false); render(); });
+document.getElementById('export').addEventListener('click', ()=>{ const csv = nodesToCSV(nodes); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='Record.csv'; document.body.appendChild(a); a.click(); a.remove(); });
+document.getElementById('addBtn').addEventListener('click', ()=>{
+  const t=document.getElementById('addType').value; const parent=document.getElementById('addParent').value.trim(); const title=document.getElementById('addTitle').value.trim(); const st=document.getElementById('status');
+  if(!parent || !title){ st.textContent='Parent and title required'; return; }
+  const course = nodes.find(n=>n.ID===parent);
+  if(!course){ st.textContent='Parent course not found'; return; }
+  const id = t.slice(0,3)+Math.floor(Math.random()*900+100);
+  course.CHILDREN = course.CHILDREN||[]; course.CHILDREN.push({ID:id,TYPE:t,TITLE:title}); course.expanded=true; render(); st.textContent='Added'; setTimeout(()=>st.textContent='',1500);
+});
+
+document.getElementById('search').addEventListener('input', ()=>{ render(); });
+
+// initial render
+render();
+</script>
+</body>
+</html>

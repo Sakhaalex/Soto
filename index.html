@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soto Source of Truth Hub</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #FFFFFF;
+            color: #111111;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            position: relative;
+        }
+        
+        /* Navigation Bar */
+        nav {
+            background-color: #000000;
+            color: #FFFFFF;
+            padding: 0 2rem;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            z-index: 100;
+        }
+        .logo {
+            font-weight: 800;
+            font-size: 1.2rem;
+            letter-spacing: -0.5px;
+            color: #FFFFFF;
+        }
+        .logo span {
+            color: #F97316;
+        }
+        .nav-links {
+            display: flex;
+            list-style: none;
+            height: 100%;
+        }
+        .nav-item {
+            position: relative;
+            height: 100%;
+        }
+        .nav-button {
+            background: none;
+            border: none;
+            color: #CCCCCC;
+            padding: 0 1.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            transition: color 0.15s ease, background-color 0.15s ease;
+        }
+        .nav-button:hover, .nav-item:hover .nav-button {
+            color: #FFFFFF;
+            background-color: #1A1A1A;
+        }
+        
+        /* Dropdown Levels */
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background-color: #000000;
+            min-width: 200px;
+            border-top: 2px solid #F97316;
+            list-style: none;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: all 0.2s ease;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+        .nav-item:hover .dropdown-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .dropdown-item {
+            position: relative;
+        }
+        .dropdown-link {
+            display: block;
+            padding: 0.75rem 1.5rem;
+            color: #CCCCCC;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+        .dropdown-link:hover {
+            color: #FFFFFF;
+            background-color: #1A1A1A;
+        }
+        
+        /* Nested Sub-dropdown */
+        .sub-dropdown {
+            position: absolute;
+            top: 0;
+            left: 100%;
+            background-color: #000000;
+            min-width: 220px;
+            border-left: 2px solid #F97316;
+            list-style: none;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(10px);
+            transition: all 0.2s ease;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+        .dropdown-item:hover .sub-dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+        }
+        .sub-link {
+            display: block;
+            padding: 0.75rem 1.5rem;
+            color: #CCCCCC;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+        .sub-link:hover {
+            color: #F97316;
+            background-color: #1A1A1A;
+        }
+
+        /* Background Wall of Thoughts Marquee */
+        .bg-marquee-wall {
+            position: absolute;
+            top: 60px;
+            left: 0;
+            width: 100%;
+            height: calc(100vh - 60px);
+            overflow: hidden;
+            z-index: 1;
+            pointer-events: none;
+            user-select: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1.5rem 0;
+            opacity: 0.85;
+        }
+        .marquee-lane {
+            display: flex;
+            overflow: hidden;
+            white-space: nowrap;
+            width: 100%;
+        }
+        .marquee-inner {
+            display: inline-flex;
+            gap: 5rem;
+            animation: scroll-left linear infinite;
+        }
+        .thought-text {
+            color: #9CA3AF; /* Extremely soft grey background text */
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+            text-transform: uppercase;
+        }
+
+        @keyframes scroll-left {
+            0% { transform: translate3d(0, 0, 0); }
+            100% { transform: translate3d(-50%, 0, 0); }
+        }
+
+        /* Foreground Hero Container */
+        .hero-container {
+            position: relative;
+            z-index: 10;
+            margin: auto;
+            max-width: 680px;
+            width: calc(100% - 4rem);
+            background-color: rgba(255, 255, 255, 0.98);
+            border: 1px solid #E5E7EB;
+            padding: 3.5rem 3rem;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+            text-align: center;
+        }
+        .hero-container h2 {
+            font-size: 2.8rem;
+            font-weight: 900;
+            color: #000000;
+            letter-spacing: -1.5px;
+            line-height: 1.1;
+            margin-bottom: 1.2rem;
+        }
+        .hero-container h2 span {
+            color: #F97316;
+        }
+        .hero-container p {
+            color: #4B5563;
+            font-size: 1.05rem;
+            font-weight: 500;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+        .hero-action {
+            display: inline-block;
+            background-color: #000000;
+            color: #FFFFFF;
+            padding: 0.85rem 2rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-decoration: none;
+            border-radius: 12px;
+            border: 1.5px solid #000000;
+            transition: all 0.15s ease;
+        }
+        .hero-action:hover {
+            background-color: #FFFFFF;
+            color: #F97316;
+            border-color: #F97316;
+        }
+
+        /* Footer */
+        footer {
+            background-color: #000000;
+            color: #777777;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            font-size: 0.75rem;
+            font-weight: 500;
+            position: relative;
+            z-index: 10;
+            border-top: 1px solid #1A1A1A;
+        }
+        footer a {
+            color: #CCCCCC;
+            text-decoration: none;
+            transition: color 0.15s ease;
+        }
+        footer a:hover {
+            color: #F97316;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Navigation Bar -->
+    <nav>
+        <div class="logo">SOTO<span>.</span></div>
+        
+        <ul class="nav-links">
+            <li class="nav-item">
+                <button class="nav-button">Projects</button>
+                <ul class="dropdown-menu">
+                    <li class="dropdown-item">
+                        <a href="#" class="dropdown-link" onclick="event.preventDefault();">Soto &raquo;</a>
+                        <ul class="sub-dropdown">
+                            <li><a href="./File/file_copilot.html" class="sub-link">File Operations Co-pilot</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+        </ul>
+        
+        <div style="font-size: 0.8rem; font-weight: 700; color: #777777;">SYSTEM STATUS: <span style="color: #F97316;">ONLINE</span></div>
+    </nav>
+
+    <!-- Background Wallpaper / Marquee Wall -->
+    <div class="bg-marquee-wall" id="marqueeWall">
+        <!-- 24 dynamic parallel scrolling lanes will be generated here -->
+    </div>
+
+    <!-- Foreground Minimalist Hero Section -->
+    <main class="hero-container">
+        <h2>Soto<span>.</span> Architecture</h2>
+        <p>Deterministic Source of Truth Orchestrator. An advanced offline repository matrix mapping files and automating metadata operations.</p>
+        <a href="./File/file_copilot.html" class="hero-action">Launch Co-pilot Dashboard</a>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        Soto Source of Truth Architecture &bull; <a href="./File/documentation.md">Documentation Ledger</a>
+    </footer>
+
+    <!-- Load thoughts data (Zero-Server Strategy) -->
+    <script src="thoughts.js"></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const wall = document.getElementById('marqueeWall');
+            if (window.sotoThoughts && window.sotoThoughts.length > 0) {
+                const thoughts = window.sotoThoughts;
+                const laneCount = 24; // 24 parallel lines
+
+                // Helper to shuffle array
+                const shuffleArray = (arr) => [...arr].sort(() => 0.5 - Math.random());
+
+                // Build HTML for each lane
+                let wallHtml = '';
+                for (let i = 0; i < laneCount; i++) {
+                    const shuffled = shuffleArray(thoughts);
+                    // Select a slice of thoughts to make each lane unique
+                    const slice = shuffled.slice(0, 15);
+                    const listHtml = slice.map(t => `<span class="thought-text">${t.Line}</span>`).join('');
+                    
+                    // Assign varying animation speeds (between 25 and 75 seconds) for parallel offsets
+                    const speed = Math.floor(Math.random() * 50) + 30;
+                    // Assign varying delay offsets
+                    const delay = (Math.random() * -40).toFixed(1);
+
+                    wallHtml += `
+                        <div class="marquee-lane">
+                            <div class="marquee-inner" style="animation-duration: ${speed}s; animation-delay: ${delay}s;">
+                                ${listHtml} ${listHtml}
+                            </div>
+                        </div>
+                    `;
+                }
+                wall.innerHTML = wallHtml;
+            }
+        });
+    </script>
+</body>
+</html>
