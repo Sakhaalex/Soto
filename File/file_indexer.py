@@ -1,5 +1,6 @@
 import os
 import csv
+import sys
 from datetime import datetime
 
 
@@ -30,9 +31,16 @@ class FileIndexer:
     FOLDER_PREFIX = "*"
 
     def __init__(self, output_file="File.csv", row_limit=999999):
-        self.script_dir = os.path.dirname(
-            os.path.abspath(__file__)
-        )
+        if getattr(sys, "frozen", False):
+            self.script_dir = os.path.dirname(
+                os.path.abspath(
+                    sys.executable
+                )
+            )
+        else:
+            self.script_dir = os.path.dirname(
+                os.path.abspath(__file__)
+            )
 
         self.output_file = os.path.join(
             self.script_dir,
